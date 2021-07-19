@@ -4,6 +4,8 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using Polly;
+using Polly.Retry;
 
 namespace LearningPolly.Controllers
 {
@@ -11,13 +13,22 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
+        private AsyncRetryPolicy<HttpResponseMessage> _httpRetryPolicy;
+
+        public CatalogController() =>
+            _httpRetryPolicy = Policy
+                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+                .RetryAsync(3);
+
         [HttpGet("{id:int}")]
         public async Task<IActionResult> Get(int id)
         {
             var httpClient = GetHttpClient();
             var requestEndpoint = $"inventory/{id}";
 
-            var response = await httpClient.GetAsync(requestEndpoint);
+            // var response = await httpClient.GetAsync(requestEndpoint);
+            var response = await _httpRetryPolicy
+                .ExecuteAsync(() => httpClient.GetAsync(requestEndpoint));
 
             if (response.IsSuccessStatusCode)
             {
