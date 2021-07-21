@@ -8,20 +8,14 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class InventoryController : ControllerBase
     {
-        static int _requestCount = 0;
-
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            _requestCount++;
+            await Task.Delay(100); // simulate some data processing by delaying for 100 milliseconds
 
-            // simulate some data processing by delaying for 100 milliseconds
-            await Task.Delay(100);
-
-            // only one of out four requests will succeed
-            return _requestCount % 4 == 0
-                ? Ok(15)
-                : StatusCode((int)HttpStatusCode.InternalServerError, "Something went wrong");
+            return Request.Cookies["Auth"] == "GoodAuthCode"
+                    ? Ok(15)
+                    : StatusCode((int) HttpStatusCode.Unauthorized, "Not Authorized");
         }
     }
 }
