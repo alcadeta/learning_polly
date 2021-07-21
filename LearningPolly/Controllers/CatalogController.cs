@@ -18,7 +18,8 @@ namespace LearningPolly.Controllers
         public CatalogController() =>
             _httpRetryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .RetryAsync(3);
+                .WaitAndRetryAsync(3,
+                    retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt) / 2));
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> Get(int id)
@@ -36,7 +37,7 @@ namespace LearningPolly.Controllers
                 return Ok(itemsInStock);
             }
 
-            return StatusCode((int)response.StatusCode, response.Content.ReadAsStringAsync());
+            return StatusCode((int) response.StatusCode, response.Content.ReadAsStringAsync());
         }
 
         private HttpClient GetHttpClient()
