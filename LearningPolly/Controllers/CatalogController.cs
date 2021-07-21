@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
 using Polly.Retry;
+using Polly.Fallback;
 
 namespace LearningPolly.Controllers
 {
@@ -16,21 +18,27 @@ namespace LearningPolly.Controllers
     {
         private HttpClient _httpClient;
         private AsyncRetryPolicy<HttpResponseMessage> _httpRetryPolicy;
+        private AsyncFallbackPolicy<HttpResponseMessage> _httpFallbackPolicy;
 
-        public CatalogController() =>
+        private int _cachedNumber = 0;
+
+        public CatalogController()
+        {
             _httpRetryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .RetryAsync(3,
-                    onRetry: (httpResponseMessage, _) =>
-                    {
-                        if (httpResponseMessage.Result.StatusCode == HttpStatusCode.Unauthorized)
-                        {
-                            PerformReauthorization();
-                        }
-                    });
+                .RetryAsync(3);
 
-        private void PerformReauthorization() =>
-            _httpClient = GetHttpClient("GoodAuthCode");
+            _httpFallbackPolicy = Policy
+                .HandleResult<HttpResponseMessage>(r => r.StatusCode == HttpStatusCode.InternalServerError)
+                .FallbackAsync(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new ObjectContent(
+                            _cachedNumber.GetType(),
+                            _cachedNumber,
+                            new JsonMediaTypeFormatter())
+                    });
+        }
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> Get(int id)
@@ -38,9 +46,12 @@ namespace LearningPolly.Controllers
             _httpClient = GetHttpClient("BadAuthCode");
             var requestEndpoint = $"inventory/{id}";
 
-            // var response = await httpClient.GetAsync(requestEndpoint);
-            var response = await _httpRetryPolicy
-                .ExecuteAsync(() => _httpClient.GetAsync(requestEndpoint));
+            // Note: though chaining policies like this is reasonable, PolicyWrap is the idiomatic
+            // way of doing it. PolicyWrap will be covered later on.
+            var response = await _httpFallbackPolicy
+                .ExecuteAsync(
+                    () => _httpRetryPolicy.ExecuteAsync(
+                        () => _httpClient.GetAsync(requestEndpoint)));
 
             if (response.IsSuccessStatusCode)
             {

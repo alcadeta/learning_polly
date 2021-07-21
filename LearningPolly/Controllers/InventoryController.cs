@@ -13,9 +13,9 @@ namespace LearningPolly.Controllers
         {
             await Task.Delay(100); // simulate some data processing by delaying for 100 milliseconds
 
-            return Request.Cookies["Auth"] == "GoodAuthCode"
-                    ? Ok(15)
-                    : StatusCode((int) HttpStatusCode.Unauthorized, "Not Authorized");
+            return StatusCode(
+                (int) HttpStatusCode.InternalServerError,
+                "Something went wrong.");
         }
     }
 }
