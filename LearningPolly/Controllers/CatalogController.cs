@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
@@ -18,8 +19,18 @@ namespace LearningPolly.Controllers
         public CatalogController() =>
             _httpRetryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .WaitAndRetryAsync(3,
-                    retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt) / 2));
+                .RetryAsync(3,
+                    onRetry: (httpResponseMessage, _) =>
+                    {
+                        if (httpResponseMessage.Result.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            // log somewhere
+                        }
+                        else if (httpResponseMessage.Result.StatusCode == HttpStatusCode.Conflict)
+                        {
+                            // do something else
+                        }
+                    });
 
         [HttpGet("{id:int}")]
         public async Task<IActionResult> Get(int id)
