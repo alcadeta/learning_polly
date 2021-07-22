@@ -3,12 +3,14 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
-using Polly.Retry;
 using Polly.Fallback;
+using Polly.Retry;
+using Polly.Timeout;
 
 namespace LearningPolly.Controllers
 {
@@ -16,42 +18,46 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private HttpClient _httpClient;
-        private AsyncRetryPolicy<HttpResponseMessage> _httpRetryPolicy;
-        private AsyncFallbackPolicy<HttpResponseMessage> _httpFallbackPolicy;
+        readonly AsyncTimeoutPolicy _timeoutPolicy;
+        readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
+        readonly AsyncFallbackPolicy<HttpResponseMessage> _fallbackPolicy;
 
-        private int _cachedNumber = 0;
+        readonly int _cachedResult = 0;
 
         public CatalogController()
         {
-            _httpRetryPolicy = Policy
+            // throws `TimeoutRejectedException` if timeout of 1 second is exceeded.
+            _timeoutPolicy = Policy.TimeoutAsync(1);
+
+            _retryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+                .Or<TimeoutRejectedException>()
                 .RetryAsync(3);
 
-            _httpFallbackPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => r.StatusCode == HttpStatusCode.InternalServerError)
+            _fallbackPolicy = Policy
+                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+                .Or<TimeoutRejectedException>()
                 .FallbackAsync(
                     new HttpResponseMessage(HttpStatusCode.OK)
                     {
                         Content = new ObjectContent(
-                            _cachedNumber.GetType(),
-                            _cachedNumber,
+                            _cachedResult.GetType(),
+                            _cachedResult,
                             new JsonMediaTypeFormatter())
                     });
         }
 
-        [HttpGet("{id:int}")]
+        [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            _httpClient = GetHttpClient("BadAuthCode");
+            var httpClient = GetHttpClient();
             var requestEndpoint = $"inventory/{id}";
 
-            // Note: though chaining policies like this is reasonable, PolicyWrap is the idiomatic
-            // way of doing it. PolicyWrap will be covered later on.
-            var response = await _httpFallbackPolicy
-                .ExecuteAsync(
-                    () => _httpRetryPolicy.ExecuteAsync(
-                        () => _httpClient.GetAsync(requestEndpoint)));
+            var response = await _fallbackPolicy.ExecuteAsync(
+                () => _retryPolicy.ExecuteAsync(
+                    () => _timeoutPolicy.ExecuteAsync(
+                        async token => await httpClient.GetAsync(requestEndpoint, token),
+                        CancellationToken.None)));
 
             if (response.IsSuccessStatusCode)
             {
@@ -60,19 +66,18 @@ namespace LearningPolly.Controllers
                 return Ok(itemsInStock);
             }
 
-            return StatusCode((int) response.StatusCode, response.Content.ReadAsStringAsync());
+            return StatusCode(
+                (int) response.StatusCode,
+                response.Content.ReadAsStringAsync());
         }
 
-        private HttpClient GetHttpClient(string authCode)
+        private HttpClient GetHttpClient()
         {
-            var cookieContainer = new CookieContainer();
-            var handler = new HttpClientHandler {CookieContainer = cookieContainer};
-            cookieContainer.Add(new Uri("http://localhost"), new Cookie("Auth", authCode));
-
-            var httpClient = new HttpClient(handler);
+            var httpClient = new HttpClient();
             httpClient.BaseAddress = new Uri(@"http://localhost:5000/api/");
             httpClient.DefaultRequestHeaders.Accept.Clear();
-            httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            httpClient.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/json"));
             return httpClient;
         }
     }
