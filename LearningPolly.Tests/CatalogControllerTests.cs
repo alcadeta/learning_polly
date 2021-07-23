@@ -11,13 +11,14 @@ using Moq;
 using Moq.Protected;
 using NUnit.Framework;
 using Polly;
+using Polly.Registry;
 
 namespace LearningPolly.Tests
 {
     public class Tests
     {
         [Test]
-        public async Task Test1()
+        public async Task TestGet()
         {
             // Arrange:
             var fakeInventoryResponse = 15;
@@ -44,11 +45,16 @@ namespace LearningPolly.Tests
             httpClient.DefaultRequestHeaders.Accept.Add(
                 new MediaTypeWithQualityHeaderValue("application/json"));
 
-            var mockPolicy =
-                (IAsyncPolicy<HttpResponseMessage>)
+            var mockRegistry = new PolicyRegistry();
+            var httpRetryPolicy = (IAsyncPolicy<HttpResponseMessage>)
                 Policy.NoOpAsync<HttpResponseMessage>();
+            var httpClientTimeoutExceptionPolicy = (IAsyncPolicy)
+                Policy.NoOpAsync();
 
-            var controller = new CatalogController(mockPolicy, httpClient);
+            mockRegistry.Add("SimpleHttpRetryPolicy", httpRetryPolicy);
+            mockRegistry.Add("SimpleHttpTimeoutPolicy", httpClientTimeoutExceptionPolicy);
+
+            var controller = new CatalogController(mockRegistry, httpClient);
 
             // Act:
             var result = await controller.Get(2);

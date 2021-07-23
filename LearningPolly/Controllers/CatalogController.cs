@@ -1,24 +1,25 @@
-﻿using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
+﻿using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
+using Polly.Registry;
+
 namespace LearningPolly.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly IAsyncPolicy<HttpResponseMessage> _httpRetryPolicy;
+        private readonly IPolicyRegistry<string> _policyRegistry;
         private readonly HttpClient _httpClient;
 
         public CatalogController(
-            IAsyncPolicy<HttpResponseMessage> httpRetryPolicy,
+            IPolicyRegistry<string> policyRegistry,
             HttpClient httpClient)
         {
-            _httpRetryPolicy = httpRetryPolicy;
+            _policyRegistry = policyRegistry;
             _httpClient = httpClient;
         }
 
@@ -27,8 +28,17 @@ namespace LearningPolly.Controllers
         {
             var requestEndpoint = $"inventory/{id}";
 
-            var response = await _httpRetryPolicy.ExecuteAsync(
-                () => _httpClient.GetAsync(requestEndpoint));
+            var httpRetryPolicy = _policyRegistry
+                .Get<IAsyncPolicy<HttpResponseMessage>>(
+                    "SimpleHttpRetryPolicy");
+
+            var httpTimeoutPolicy = _policyRegistry
+                .Get<IAsyncPolicy>("SimpleHttpTimeoutPolicy");
+
+            var response = await httpRetryPolicy.ExecuteAsync(
+                () => httpTimeoutPolicy.ExecuteAsync(
+                    token => _httpClient.GetAsync(requestEndpoint, token),
+                    CancellationToken.None));
 
             if (response.IsSuccessStatusCode)
             {
@@ -42,14 +52,14 @@ namespace LearningPolly.Controllers
                 response.Content.ReadAsStringAsync());
         }
 
-        private HttpClient GetHttpClient()
-        {
-            var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri(@"http://localhost:5000/api/");
-            httpClient.DefaultRequestHeaders.Accept.Clear();
-            httpClient.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
-            return httpClient;
-        }
+        // private HttpClient GetHttpClient()
+        // {
+        //     var httpClient = new HttpClient();
+        //     httpClient.BaseAddress = new Uri(@"http://localhost:5000/api/");
+        //     httpClient.DefaultRequestHeaders.Accept.Clear();
+        //     httpClient.DefaultRequestHeaders.Accept.Add(
+        //         new MediaTypeWithQualityHeaderValue("application/json"));
+        //     return httpClient;
+        // }
     }
 }
