@@ -45,22 +45,22 @@ namespace LearningPolly.Tests
             httpClient.DefaultRequestHeaders.Accept.Add(
                 new MediaTypeWithQualityHeaderValue("application/json"));
 
-            var mockRegistry = new PolicyRegistry();
-            var httpRetryPolicy = (IAsyncPolicy<HttpResponseMessage>)
+            var mockPolicyHolder = new Mock<PolicyHolder>();
+            mockPolicyHolder.SetupAllProperties();
+            mockPolicyHolder.Object.HttpRetryPolicy =
                 Policy.NoOpAsync<HttpResponseMessage>();
-            var httpClientTimeoutExceptionPolicy = (IAsyncPolicy)
+            mockPolicyHolder.Object.HttpClientTimeoutException =
                 Policy.NoOpAsync();
 
-            mockRegistry.Add("SimpleHttpRetryPolicy", httpRetryPolicy);
-            mockRegistry.Add("SimpleHttpTimeoutPolicy", httpClientTimeoutExceptionPolicy);
-
-            var controller = new CatalogController(mockRegistry, httpClient);
+            var controller = new CatalogController(
+                mockPolicyHolder.Object,
+                httpClient);
 
             // Act:
             var result = await controller.Get(2);
 
             // Assert:
-            var resultObject = result as OkObjectResult;
+            var resultObject = (OkObjectResult) result;
             Assert.NotNull(resultObject);
 
             var number = (int) resultObject.Value;

@@ -3,8 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using Polly;
-using Polly.Registry;
 
 namespace LearningPolly.Controllers
 {
@@ -12,14 +10,14 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly IPolicyRegistry<string> _policyRegistry;
+        private readonly IPolicyHolder _policyHolder;
         private readonly HttpClient _httpClient;
 
         public CatalogController(
-            IPolicyRegistry<string> policyRegistry,
+            IPolicyHolder policyHolder,
             HttpClient httpClient)
         {
-            _policyRegistry = policyRegistry;
+            _policyHolder = policyHolder;
             _httpClient = httpClient;
         }
 
@@ -28,15 +26,8 @@ namespace LearningPolly.Controllers
         {
             var requestEndpoint = $"inventory/{id}";
 
-            var httpRetryPolicy = _policyRegistry
-                .Get<IAsyncPolicy<HttpResponseMessage>>(
-                    "SimpleHttpRetryPolicy");
-
-            var httpTimeoutPolicy = _policyRegistry
-                .Get<IAsyncPolicy>("SimpleHttpTimeoutPolicy");
-
-            var response = await httpRetryPolicy.ExecuteAsync(
-                () => httpTimeoutPolicy.ExecuteAsync(
+            var response = await _policyHolder.HttpRetryPolicy.ExecuteAsync(
+                () => _policyHolder.HttpClientTimeoutException.ExecuteAsync(
                     token => _httpClient.GetAsync(requestEndpoint, token),
                     CancellationToken.None));
 

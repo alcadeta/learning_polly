@@ -1,14 +1,13 @@
 using System;
 using System.Net.Http;
 using Polly;
-using Polly.Retry;
 
-namespace LearningPolly.Policies
+namespace LearningPolly
 {
-    public class PolicyHolder
+    public class PolicyHolder : IPolicyHolder
     {
-        public AsyncRetryPolicy<HttpResponseMessage> HttpRetryPolicy { get; }
-        public AsyncRetryPolicy HttpClientTimeoutException { get; }
+        public IAsyncPolicy<HttpResponseMessage> HttpRetryPolicy { get; set; }
+        public IAsyncPolicy HttpClientTimeoutException { get; set;  }
 
         public PolicyHolder()
         {
@@ -16,16 +15,22 @@ namespace LearningPolly.Policies
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
                 .WaitAndRetryAsync(
                     3,
-                    retryAttempt => TimeSpan.FromSeconds(retryAttempt));
+                    retryAttempt => TimeSpan.FromSeconds(retryAttempt),
+                    (response, _) =>
+                    {
+                        var result = response.Result;
+                        // Log the result.
+                    });
 
             HttpClientTimeoutException = Policy
                 .Handle<HttpRequestException>()
                 .WaitAndRetryAsync(
-                    3,
+                    1,
                     retryAttempt => TimeSpan.FromSeconds(retryAttempt),
                     (exception, _) =>
                     {
                         var message = exception.Message;
+                        // Log the message.
                     });
         }
     }

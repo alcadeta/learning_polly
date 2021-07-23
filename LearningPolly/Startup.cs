@@ -1,6 +1,5 @@
 using System;
 using System.Net.Http;
-using LearningPolly.Policies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -24,7 +23,8 @@ namespace LearningPolly
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddSingleton(GetRegistry());
+            // services.AddSingleton(GetRegistry());
+            services.AddSingleton<IPolicyHolder, PolicyHolder>();
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
