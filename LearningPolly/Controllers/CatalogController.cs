@@ -1,16 +1,11 @@
 ﻿using System;
-using System.Net;
 using System.Net.Http;
-using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
-using System.Threading;
 using System.Threading.Tasks;
+using LearningPolly.Policies;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
-using Polly.Fallback;
-using Polly.Retry;
-using Polly.Timeout;
 
 namespace LearningPolly.Controllers
 {
@@ -18,33 +13,11 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        readonly AsyncTimeoutPolicy _timeoutPolicy;
-        readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
-        readonly AsyncFallbackPolicy<HttpResponseMessage> _fallbackPolicy;
+        private readonly PolicyHolder _policyHolder;
 
-        readonly int _cachedResult = 0;
-
-        public CatalogController()
+        public CatalogController(PolicyHolder policyHolder)
         {
-            // throws `TimeoutRejectedException` if timeout of 1 second is exceeded.
-            _timeoutPolicy = Policy.TimeoutAsync(1);
-
-            _retryPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .Or<TimeoutRejectedException>()
-                .RetryAsync(3);
-
-            _fallbackPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .Or<TimeoutRejectedException>()
-                .FallbackAsync(
-                    new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new ObjectContent(
-                            _cachedResult.GetType(),
-                            _cachedResult,
-                            new JsonMediaTypeFormatter())
-                    });
+            _policyHolder = policyHolder;
         }
 
         [HttpGet("{id}")]
@@ -53,11 +26,8 @@ namespace LearningPolly.Controllers
             var httpClient = GetHttpClient();
             var requestEndpoint = $"inventory/{id}";
 
-            var response = await _fallbackPolicy.ExecuteAsync(
-                () => _retryPolicy.ExecuteAsync(
-                    () => _timeoutPolicy.ExecuteAsync(
-                        async token => await httpClient.GetAsync(requestEndpoint, token),
-                        CancellationToken.None)));
+            var response = await _policyHolder.HttpRetryPolicy.ExecuteAsync(
+                () => httpClient.GetAsync(requestEndpoint));
 
             if (response.IsSuccessStatusCode)
             {

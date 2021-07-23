@@ -13,15 +13,14 @@ namespace LearningPolly.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
+            await Task.Delay(100);
             _requestCount++;
 
-            if (_requestCount % 6 != 0)
-            {
-                // simulate some data processing by delaying by 10 seconds
-                await Task.Delay(10000);
-            }
-
-            return Ok(15);
+            return _requestCount % 4 == 0
+                ? Ok(15)
+                : StatusCode(
+                    (int) HttpStatusCode.InternalServerError,
+                    "Something went wrong");
         }
     }
 }
