@@ -2,10 +2,10 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using LearningPolly.Policies;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using Polly;
+using Polly.Registry;
+using Polly.Retry;
 
 namespace LearningPolly.Controllers
 {
@@ -13,11 +13,11 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly PolicyHolder _policyHolder;
+        private readonly PolicyRegistry _policyRegistry;
 
-        public CatalogController(PolicyHolder policyHolder)
+        public CatalogController(PolicyRegistry policyRegistry)
         {
-            _policyHolder = policyHolder;
+            _policyRegistry = policyRegistry;
         }
 
         [HttpGet("{id}")]
@@ -26,7 +26,10 @@ namespace LearningPolly.Controllers
             var httpClient = GetHttpClient();
             var requestEndpoint = $"inventory/{id}";
 
-            var response = await _policyHolder.HttpRetryPolicy.ExecuteAsync(
+            var retryPolicy = _policyRegistry
+                .Get<AsyncRetryPolicy<HttpResponseMessage>>("SimpleWaitAndRetry");
+
+            var response = await retryPolicy.ExecuteAsync(
                 () => httpClient.GetAsync(requestEndpoint));
 
             if (response.IsSuccessStatusCode)

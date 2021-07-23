@@ -17,6 +17,7 @@ namespace LearningPolly.Policies
                 .WaitAndRetryAsync(
                     3,
                     retryAttempt => TimeSpan.FromSeconds(retryAttempt));
+
             HttpClientTimeoutException = Policy
                 .Handle<HttpRequestException>()
                 .WaitAndRetryAsync(
