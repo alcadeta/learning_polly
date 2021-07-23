@@ -4,33 +4,31 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using Polly.Registry;
-using Polly.Retry;
-
+using Polly;
 namespace LearningPolly.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly PolicyRegistry _policyRegistry;
+        private readonly IAsyncPolicy<HttpResponseMessage> _httpRetryPolicy;
+        private readonly HttpClient _httpClient;
 
-        public CatalogController(PolicyRegistry policyRegistry)
+        public CatalogController(
+            IAsyncPolicy<HttpResponseMessage> httpRetryPolicy,
+            HttpClient httpClient)
         {
-            _policyRegistry = policyRegistry;
+            _httpRetryPolicy = httpRetryPolicy;
+            _httpClient = httpClient;
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            var httpClient = GetHttpClient();
             var requestEndpoint = $"inventory/{id}";
 
-            var retryPolicy = _policyRegistry
-                .Get<AsyncRetryPolicy<HttpResponseMessage>>("SimpleWaitAndRetry");
-
-            var response = await retryPolicy.ExecuteAsync(
-                () => httpClient.GetAsync(requestEndpoint));
+            var response = await _httpRetryPolicy.ExecuteAsync(
+                () => _httpClient.GetAsync(requestEndpoint));
 
             if (response.IsSuccessStatusCode)
             {
