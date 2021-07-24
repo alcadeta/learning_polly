@@ -20,7 +20,7 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly AsyncTimeoutPolicy _timeoutPolicy;
+        private readonly AsyncTimeoutPolicy<HttpResponseMessage> _timeoutPolicy;
         private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
         private readonly AsyncFallbackPolicy<HttpResponseMessage> _fallbackPolicy;
         private readonly AsyncPolicyWrap<HttpResponseMessage> _policyWrap;
@@ -29,13 +29,12 @@ namespace LearningPolly.Controllers
 
         public CatalogController()
         {
-            _timeoutPolicy = Policy
-                .TimeoutAsync(1, onTimeoutAsync: TimeoutDelegate);
+            _timeoutPolicy = Policy.TimeoutAsync<HttpResponseMessage>(1);
 
             _retryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
                 .Or<TimeoutRejectedException>()
-                .RetryAsync(3, onRetry: RetryDelegate);
+                .RetryAsync(3);
 
             _fallbackPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
@@ -47,32 +46,9 @@ namespace LearningPolly.Controllers
                             _cachedResult.GetType(),
                             _cachedResult,
                             new JsonMediaTypeFormatter())
-                    },
-                    onFallbackAsync: FallbackDelegate);
+                    });
 
-            _policyWrap = _fallbackPolicy
-                .WrapAsync(_retryPolicy
-                    .WrapAsync(_timeoutPolicy));
-        }
-
-        private Task TimeoutDelegate(
-            Context arg1, TimeSpan arg2, Task arg3)
-        {
-            Debug.WriteLine("In TimeoutAsync");
-            return Task.CompletedTask;
-        }
-
-        private void RetryDelegate(
-            DelegateResult<HttpResponseMessage> arg1,
-            int arg2)
-        {
-            Debug.WriteLine("In RetryAsync");
-        }
-
-        private Task FallbackDelegate(DelegateResult<HttpResponseMessage> arg)
-        {
-            Debug.WriteLine("In FallbackAsync");
-            return Task.CompletedTask;
+            _policyWrap = Policy.WrapAsync(_fallbackPolicy, _retryPolicy, _timeoutPolicy);
         }
 
         [HttpGet("{id}")]
