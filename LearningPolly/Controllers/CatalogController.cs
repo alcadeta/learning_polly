@@ -1,18 +1,13 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Net;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
-using Polly.Fallback;
 using Polly.Retry;
-using Polly.Timeout;
-using Polly.Wrap;
 
 namespace LearningPolly.Controllers
 {
@@ -20,46 +15,44 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly AsyncTimeoutPolicy<HttpResponseMessage> _timeoutPolicy;
         private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
-        private readonly AsyncFallbackPolicy<HttpResponseMessage> _fallbackPolicy;
-        private readonly AsyncPolicyWrap<HttpResponseMessage> _policyWrap;
+        private readonly HttpClient _httpClient;
 
         private readonly int _cachedResult = 0;
 
-        public CatalogController()
+        public CatalogController(
+            AsyncRetryPolicy<HttpResponseMessage> retryPolicy,
+            HttpClient httpClient)
         {
-            _timeoutPolicy = Policy.TimeoutAsync<HttpResponseMessage>(1);
-
-            _retryPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .Or<TimeoutRejectedException>()
-                .RetryAsync(3);
-
-            _fallbackPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .Or<TimeoutRejectedException>()
-                .FallbackAsync(
-                    new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new ObjectContent(
-                            _cachedResult.GetType(),
-                            _cachedResult,
-                            new JsonMediaTypeFormatter())
-                    });
-
-            _policyWrap = Policy.WrapAsync(_fallbackPolicy, _retryPolicy, _timeoutPolicy);
+            _retryPolicy = retryPolicy;
+            _httpClient = httpClient;
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
             var requestEndpoint = $"inventory/{id}";
-            var httpClient = GetHttpClient();
 
-            var response = await _policyWrap.ExecuteAsync(
-                token => httpClient.GetAsync(requestEndpoint, token),
-                CancellationToken.None);
+            var host = Request
+                .Headers
+                .FirstOrDefault(h => h.Key == "Host")
+                .Value;
+
+            var userAgent = Request
+                .Headers
+                .FirstOrDefault(h => h.Key == "User-Agent")
+                .Value;
+
+            var contextDictionary = new Dictionary<string, object>
+            {
+                {"Host", host}, {"CatalogId", id}, {"UserAgent", userAgent}
+            };
+
+            var context = new Context("CatalogContext", contextDictionary);
+
+            var response = await _retryPolicy.ExecuteAsync(
+                _ => _httpClient.GetAsync(requestEndpoint),
+                context);
 
             if (response.IsSuccessStatusCode)
             {
