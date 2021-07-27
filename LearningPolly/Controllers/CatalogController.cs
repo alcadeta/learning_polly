@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
 using Polly.Caching;
+using Polly.CircuitBreaker;
 using Polly.Registry;
+using Polly.Retry;
 
 namespace LearningPolly.Controllers
 {
@@ -13,12 +15,18 @@ namespace LearningPolly.Controllers
     public class CatalogController : ControllerBase
     {
         private readonly HttpClient _httpClient;
-        private readonly AsyncCachePolicy<HttpResponseMessage> _cachePolicy;
+        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
+        private readonly AsyncCircuitBreakerPolicy<HttpResponseMessage> _circuitBreakerPolicy;
 
-        public CatalogController(IPolicyRegistry<string> myRegistry, HttpClient httpClient)
+        public CatalogController(
+            HttpClient httpClient,
+            AsyncCircuitBreakerPolicy<HttpResponseMessage> circuitBreakerPolicy)
         {
             _httpClient = httpClient;
-            _cachePolicy = myRegistry.Get<AsyncCachePolicy<HttpResponseMessage>>("myLocalCachePolicy");
+            _circuitBreakerPolicy = circuitBreakerPolicy;
+            _retryPolicy = Policy
+                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+                .RetryAsync(2);
         }
 
         [HttpGet("{id}")]
@@ -26,9 +34,9 @@ namespace LearningPolly.Controllers
         {
             var requestEndpoint = $"inventory/{id}";
 
-            var policyExecutionContext = new Context($"GetInventoryById-{id}");
-
-            var response = await _cachePolicy.ExecuteAsync(_ => _httpClient.GetAsync(requestEndpoint), policyExecutionContext);
+            var response = await _retryPolicy.ExecuteAsync(
+                () => _circuitBreakerPolicy.ExecuteAsync(
+                    () => _httpClient.GetAsync(requestEndpoint)));
 
             if (response.IsSuccessStatusCode)
             {
@@ -38,6 +46,26 @@ namespace LearningPolly.Controllers
             }
 
             return StatusCode((int) response.StatusCode, response.Content.ReadAsStringAsync());
+        }
+
+        [HttpGet("pricing/{id}")]
+        public async Task<IActionResult> GetPricing(int id)
+        {
+            var requestEndpoint = $"pricing/{id}";
+
+            var response = await _retryPolicy.ExecuteAsync(
+                () => _circuitBreakerPolicy.ExecuteAsync(
+                    () => _httpClient.GetAsync(requestEndpoint)));
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var priceOfItem = JsonConvert.DeserializeObject<decimal>(responseContent);
+                return Ok($"${priceOfItem}");
+            }
+
+            return StatusCode((int) response.StatusCode, responseContent);
         }
     }
 }
