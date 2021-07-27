@@ -1,13 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
+﻿using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
-using Polly.Retry;
+using Polly.Caching;
+using Polly.Registry;
 
 namespace LearningPolly.Controllers
 {
@@ -15,17 +12,13 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
-        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
         private readonly HttpClient _httpClient;
+        private readonly AsyncCachePolicy<HttpResponseMessage> _cachePolicy;
 
-        private readonly int _cachedResult = 0;
-
-        public CatalogController(
-            AsyncRetryPolicy<HttpResponseMessage> retryPolicy,
-            HttpClient httpClient)
+        public CatalogController(IPolicyRegistry<string> myRegistry, HttpClient httpClient)
         {
-            _retryPolicy = retryPolicy;
             _httpClient = httpClient;
+            _cachePolicy = myRegistry.Get<AsyncCachePolicy<HttpResponseMessage>>("myLocalCachePolicy");
         }
 
         [HttpGet("{id}")]
@@ -33,47 +26,18 @@ namespace LearningPolly.Controllers
         {
             var requestEndpoint = $"inventory/{id}";
 
-            var host = Request
-                .Headers
-                .FirstOrDefault(h => h.Key == "Host")
-                .Value;
+            var policyExecutionContext = new Context($"GetInventoryById-{id}");
 
-            var userAgent = Request
-                .Headers
-                .FirstOrDefault(h => h.Key == "User-Agent")
-                .Value;
-
-            var contextDictionary = new Dictionary<string, object>
-            {
-                {"Host", host}, {"CatalogId", id}, {"UserAgent", userAgent}
-            };
-
-            var context = new Context("CatalogContext", contextDictionary);
-
-            var response = await _retryPolicy.ExecuteAsync(
-                _ => _httpClient.GetAsync(requestEndpoint),
-                context);
+            var response = await _cachePolicy.ExecuteAsync(_ => _httpClient.GetAsync(requestEndpoint), policyExecutionContext);
 
             if (response.IsSuccessStatusCode)
             {
-                var itemsInStock = JsonConvert.DeserializeObject<int>(
-                    await response.Content.ReadAsStringAsync());
+                var content = await response.Content.ReadAsStringAsync();
+                var itemsInStock = JsonConvert.DeserializeObject<int>(content);
                 return Ok(itemsInStock);
             }
 
-            return StatusCode(
-                (int) response.StatusCode,
-                response.Content.ReadAsStringAsync());
-        }
-
-        private HttpClient GetHttpClient()
-        {
-            var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri(@"http://localhost:5000/api/");
-            httpClient.DefaultRequestHeaders.Accept.Clear();
-            httpClient.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
-            return httpClient;
+            return StatusCode((int) response.StatusCode, response.Content.ReadAsStringAsync());
         }
     }
 }

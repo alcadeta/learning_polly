@@ -13,10 +13,8 @@ namespace LearningPolly.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            _requestCount++;
-            if (_requestCount % 6 != 0)
-                await Task.Delay(10000);
-            return Ok(15);
+            await Task.Delay(100);
+            return Ok(id + 100);
         }
     }
 }
