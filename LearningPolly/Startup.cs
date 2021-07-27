@@ -27,7 +27,9 @@ namespace LearningPolly
         {
             var circuitBreakerPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .CircuitBreakerAsync(2, TimeSpan.FromMinutes(2), OnBreak, OnReset, OnHalfOpen);
+                .AdvancedCircuitBreakerAsync(
+                    0.5, TimeSpan.FromMinutes(1), 7, TimeSpan.FromMinutes(3),
+                    OnBreak, OnReset, OnHalfOpen);
 
             _myRegistry = new PolicyRegistry();
 

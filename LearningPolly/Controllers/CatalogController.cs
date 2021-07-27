@@ -3,9 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Polly;
-using Polly.Caching;
 using Polly.CircuitBreaker;
-using Polly.Registry;
 using Polly.Retry;
 
 namespace LearningPolly.Controllers
@@ -26,7 +24,7 @@ namespace LearningPolly.Controllers
             _circuitBreakerPolicy = circuitBreakerPolicy;
             _retryPolicy = Policy
                 .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .RetryAsync(2);
+                .RetryAsync(3);
         }
 
         [HttpGet("{id}")]
