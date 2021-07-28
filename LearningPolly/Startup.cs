@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,17 +24,19 @@ namespace LearningPolly
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            var bulkheadIsolationPolicy = Policy
-                .BulkheadAsync<HttpResponseMessage>(2, 4, OnBulkheadRejectedAsync);
+            var retryPolicy = Policy
+                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
+                .RetryAsync(3);
 
-            var httpClient = new HttpClient {BaseAddress = new Uri("http://localhost:5000/api/")};
-            httpClient.DefaultRequestHeaders.Accept.Clear();
-            httpClient.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
+            services
+                .AddHttpClient("RemoteServer", client =>
+                {
+                    client.BaseAddress = new Uri("http://localhost:5000/api/");
+                    client.DefaultRequestHeaders.Add("Accept", "application/json");
+                })
+                .AddPolicyHandler(retryPolicy);
 
-            services.AddSingleton(httpClient);
-            services.AddSingleton(bulkheadIsolationPolicy);
-            services.AddMvc();
+            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
 
             services.AddControllers();
             services.AddSwaggerGen(
