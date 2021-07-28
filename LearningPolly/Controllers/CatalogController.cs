@@ -2,9 +2,9 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
+using Polly.Bulkhead;
+using System.Diagnostics;
+
 
 namespace LearningPolly.Controllers
 {
@@ -12,29 +12,27 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class CatalogController : ControllerBase
     {
+        private static int _requestCount;
         private readonly HttpClient _httpClient;
-        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
-        private readonly AsyncCircuitBreakerPolicy<HttpResponseMessage> _circuitBreakerPolicy;
+        private readonly AsyncBulkheadPolicy<HttpResponseMessage> _bulkheadIsolationPolicy;
 
         public CatalogController(
             HttpClient httpClient,
-            AsyncCircuitBreakerPolicy<HttpResponseMessage> circuitBreakerPolicy)
+            AsyncBulkheadPolicy<HttpResponseMessage> bulkheadIsolationPolicy)
         {
             _httpClient = httpClient;
-            _circuitBreakerPolicy = circuitBreakerPolicy;
-            _retryPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .RetryAsync(3);
+            _bulkheadIsolationPolicy = bulkheadIsolationPolicy;
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
+            _requestCount++;
+            LogBulkheadInfo();
             var requestEndpoint = $"inventory/{id}";
 
-            var response = await _retryPolicy.ExecuteAsync(
-                () => _circuitBreakerPolicy.ExecuteAsync(
-                    () => _httpClient.GetAsync(requestEndpoint)));
+            var response = await _bulkheadIsolationPolicy.ExecuteAsync(
+                () => _httpClient.GetAsync(requestEndpoint));
 
             if (response.IsSuccessStatusCode)
             {
@@ -46,24 +44,13 @@ namespace LearningPolly.Controllers
             return StatusCode((int) response.StatusCode, response.Content.ReadAsStringAsync());
         }
 
-        [HttpGet("pricing/{id}")]
-        public async Task<IActionResult> GetPricing(int id)
+        private void LogBulkheadInfo()
         {
-            var requestEndpoint = $"pricing/{id}";
-
-            var response = await _retryPolicy.ExecuteAsync(
-                () => _circuitBreakerPolicy.ExecuteAsync(
-                    () => _httpClient.GetAsync(requestEndpoint)));
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            if (response.IsSuccessStatusCode)
-            {
-                var priceOfItem = JsonConvert.DeserializeObject<decimal>(responseContent);
-                return Ok($"${priceOfItem}");
-            }
-
-            return StatusCode((int) response.StatusCode, responseContent);
+            Debug.WriteLine($"LearningPolly RequestCount: {_requestCount}");
+            Debug.WriteLine("LearningPolly BulkheadAvailableCount: " +
+                            _bulkheadIsolationPolicy.BulkheadAvailableCount);
+            Debug.WriteLine("LearningPolly QueueAvailableCount: "+
+                            _bulkheadIsolationPolicy.QueueAvailableCount);
         }
     }
 }

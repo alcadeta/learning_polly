@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Caching.Memory;
@@ -10,7 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using Polly;
-using Polly.Registry;
 
 namespace LearningPolly
 {
@@ -18,20 +18,13 @@ namespace LearningPolly
     {
         public Startup(IConfiguration configuration) => Configuration = configuration;
 
-        private IPolicyRegistry<string> _myRegistry;
-
         public IConfiguration Configuration { get; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            var circuitBreakerPolicy = Policy
-                .HandleResult<HttpResponseMessage>(r => !r.IsSuccessStatusCode)
-                .AdvancedCircuitBreakerAsync(
-                    0.5, TimeSpan.FromMinutes(1), 7, TimeSpan.FromMinutes(3),
-                    OnBreak, OnReset, OnHalfOpen);
-
-            _myRegistry = new PolicyRegistry();
+            var bulkheadIsolationPolicy = Policy
+                .BulkheadAsync<HttpResponseMessage>(2, 4, OnBulkheadRejectedAsync);
 
             var httpClient = new HttpClient {BaseAddress = new Uri("http://localhost:5000/api/")};
             httpClient.DefaultRequestHeaders.Accept.Clear();
@@ -39,7 +32,7 @@ namespace LearningPolly
                 new MediaTypeWithQualityHeaderValue("application/json"));
 
             services.AddSingleton(httpClient);
-            services.AddSingleton(circuitBreakerPolicy);
+            services.AddSingleton(bulkheadIsolationPolicy);
             services.AddMvc();
 
             services.AddControllers();
@@ -47,14 +40,11 @@ namespace LearningPolly
                 c => c.SwaggerDoc("v1", new OpenApiInfo {Title = "LearningPolly", Version = "v1"}));
         }
 
-        private void OnHalfOpen() => Debug.WriteLine("Connection is half-open.");
-        private void OnReset() => Debug.WriteLine("Connection is reset.");
-
-        private void OnBreak(
-                DelegateResult<HttpResponseMessage> delegateResult,
-                TimeSpan timeSpan) =>
-            Debug.WriteLine(
-                $"Connection is broken: {delegateResult.Result}, {delegateResult.Result}");
+        private Task OnBulkheadRejectedAsync(Context arg)
+        {
+            Debug.WriteLine("LearningPolly OnBulkheadRejectedAsync Executed");
+            return Task.CompletedTask;
+        }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(
@@ -62,12 +52,6 @@ namespace LearningPolly
             IWebHostEnvironment env,
             IMemoryCache memoryCache)
         {
-            var memoryCacheProvider = new Polly.Caching.Memory.MemoryCacheProvider(memoryCache);
-            var cachePolicy = Policy
-                .CacheAsync<HttpResponseMessage>(memoryCacheProvider, TimeSpan.FromMinutes(5));
-
-            _myRegistry.Add("myLocalCachePolicy", cachePolicy);
-
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();

@@ -8,17 +8,11 @@ namespace LearningPolly.Controllers
     [Route("api/[controller]")]
     public class InventoryController : ControllerBase
     {
-        private static int _requestCount;
-
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            await Task.Delay(100);
-            _requestCount++;
-
-            return _requestCount % 4 == 0
-                ? Ok(15)
-                : StatusCode((int) HttpStatusCode.InternalServerError, "Something Went Wrong");
+            await Task.Delay(10000);
+            return Ok(15);
         }
     }
 }
